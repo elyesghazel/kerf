@@ -5,6 +5,8 @@ can cut alongside you.
 
 *kerf* (n.): the slit a blade leaves when it cuts.
 
+![kerf studio](docs/studio-dark.png)
+
 - **kerf studio** (`kerf-studio`): the desktop editor, styled with the eg. design system (black, JetBrains Mono, hairlines, dark + light). Multi-track timeline,
   colour page with scopes, audio mixer, titles, export. egui + a CPU compositor,
   so it starts instantly and runs on a laptop iGPU.
@@ -57,6 +59,10 @@ edit up live, and you can undo it with Ctrl+Z.
   cached there, the export runs remotely, and the file comes back.
 
 **Agents**: see [AGENTS.md](AGENTS.md).
+
+| light | colour page |
+| --- | --- |
+| ![light theme](docs/studio-light.png) | ![colour page with scopes](docs/studio-color.png) |
 
 ```sh
 kerf new cut.kerf --preset vertical
@@ -123,6 +129,9 @@ kerf-app     `kerf-studio`: the egui editor
 ```
 
 See [ROADMAP.md](ROADMAP.md) for what comes next.
+
+kerf is a side project. For a full Premiere-style editor in Rust, look at
+[FilmCraft](https://github.com/storytold/filmcraft).
 
 ## License
 
