@@ -1,0 +1,16 @@
+[package]
+name = "kerf-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Compositor, audio mixer and exporter shared by the kerf preview and CLI"
+
+[dependencies]
+kerf-core = { workspace = true }
+kerf-media = { workspace = true }
+rayon = { workspace = true }
+ab_glyph = { workspace = true }
+epaint_default_fonts = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }

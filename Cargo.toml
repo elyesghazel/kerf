@@ -1,0 +1,59 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/kerf-core",
+    "crates/kerf-media",
+    "crates/kerf-render",
+    "crates/kerf-cli",
+    "crates/kerf-app",
+]
+# The GUI pulls in windowing + audio system libs; headless boxes build the rest.
+default-members = [
+    "crates/kerf-core",
+    "crates/kerf-media",
+    "crates/kerf-render",
+    "crates/kerf-cli",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/eghazel/kerf"
+authors = ["Elyes Ghazel"]
+
+[workspace.dependencies]
+kerf-core = { path = "crates/kerf-core" }
+kerf-media = { path = "crates/kerf-media" }
+kerf-render = { path = "crates/kerf-render" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+rayon = "1.12"
+ab_glyph = "0.2.32"
+crossbeam-channel = "0.5"
+clap = { version = "4.6", features = ["derive"] }
+png = "0.18"
+epaint_default_fonts = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+
+eframe = "0.37"
+egui = "0.37"
+rfd = "0.18"
+cpal = "0.18"
+rtrb = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+
+# Debug builds of the compositor are unusably slow; keep everything optimized.
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3

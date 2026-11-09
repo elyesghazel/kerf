@@ -1,0 +1,31 @@
+[package]
+name = "kerf-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "kerf studio: the egui desktop editor"
+
+[[bin]]
+name = "kerf-studio"
+path = "src/main.rs"
+
+[dependencies]
+kerf-core = { workspace = true }
+kerf-media = { workspace = true }
+kerf-render = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+rfd = { workspace = true }
+cpal = { workspace = true }
+rtrb = { workspace = true }
+crossbeam-channel = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+epaint_default_fonts = { workspace = true }
+
+[dev-dependencies]
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot", "eframe"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
