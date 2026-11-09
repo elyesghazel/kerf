@@ -23,7 +23,8 @@ fn main() -> eframe::Result<()> {
             .with_app_id("kerf")
             .with_inner_size([1480.0, 920.0])
             .with_min_inner_size([960.0, 600.0])
-            .with_drag_and_drop(true),
+            .with_drag_and_drop(true)
+            .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-128.png")).unwrap_or_default()),
         // Only repaint when something changes: idle costs ~0% CPU.
         run_and_return: false,
         ..Default::default()
@@ -84,6 +85,16 @@ mod shots {
         h.state_mut().workspace = Workspace::Audio;
         settle(&mut h, 600);
         save(&mut h, "audio.png");
+        {
+            let app = h.state_mut();
+            app.theme_mode = crate::theme::Mode::Light;
+            app.workspace = Workspace::Edit;
+            app.seek(kerf_core::Time::from_secs_f64(2.4));
+            let ids: Vec<_> = app.project().timeline.clips().map(|(_, c)| c.id).collect();
+            app.select_with_links(ids[2], false);
+        }
+        settle(&mut h, 1500);
+        save(&mut h, "light.png");
     }
 }
 

@@ -52,7 +52,7 @@ impl Quality {
     }
     pub fn label(self) -> &'static str {
         match self {
-            Quality::Full => "Full",
+            Quality::Full => "full",
             Quality::Half => "1/2",
             Quality::Quarter => "1/4",
         }
@@ -100,17 +100,20 @@ pub struct KerfApp {
     pub show_safe: bool,
     pub show_help: bool,
     pub recent: Vec<String>,
+    pub theme_mode: theme::Mode,
+    theme_applied: bool,
 }
 
 impl KerfApp {
     pub fn new(cc: &eframe::CreationContext<'_>, path: Option<PathBuf>) -> Self {
-        theme::install(&cc.egui_ctx);
+        theme::install_fonts(&cc.egui_ctx);
+        let theme_mode = load_settings().theme;
         let mut toasts = Vec::new();
         let (project, path) = match path {
             Some(p) if p.exists() => match Project::load(&p) {
                 Ok(pr) => (pr, Some(p)),
                 Err(e) => {
-                    toasts.push(Toast { text: format!("Could not open: {e}"), at: Instant::now(), color: RED });
+                    toasts.push(Toast { text: format!("Could not open: {e}"), at: Instant::now(), color: pal::bad() });
                     (Project::default(), None)
                 }
             },
@@ -160,9 +163,11 @@ impl KerfApp {
             show_safe: false,
             show_help: false,
             recent: load_recent(),
+            theme_mode,
+            theme_applied: false,
         };
         if !app.engine.audio_ok {
-            app.toast("No audio device: playback is silent", AMBER);
+            app.toast("No audio device: playback is silent", pal::warn());
         }
         if let Some(p) = app.path.clone() {
             app.remember_recent(&p);
@@ -184,7 +189,7 @@ impl KerfApp {
         match f(&mut self.doc) {
             Ok(v) => Some(v),
             Err(e) => {
-                self.toast(format!("Can't do that: {e}"), RED);
+                self.toast(format!("Can't do that: {e}"), pal::bad());
                 None
             }
         }
@@ -197,7 +202,7 @@ impl KerfApp {
         f(&mut c);
         let k = format!("{}:{key}", id.0);
         if let Err(e) = self.doc.apply_merge(Command::UpdateClip { track, clip: c }, &k) {
-            self.toast(format!("Can't do that: {e}"), RED);
+            self.toast(format!("Can't do that: {e}"), pal::bad());
         }
     }
 
@@ -235,7 +240,7 @@ impl KerfApp {
                 self.saved_rev = self.doc.revision();
                 self.disk_mtime = mtime(&path);
             }
-            Err(e) => self.toast(format!("Save failed: {e}"), RED),
+            Err(e) => self.toast(format!("Save failed: {e}"), pal::bad()),
         }
     }
 
@@ -249,7 +254,7 @@ impl KerfApp {
             self.path = Some(p.clone());
             self.save();
             self.remember_recent(&p);
-            self.toast(format!("Saved as {}", p.display()), LIME);
+            self.toast(format!("Saved as {}", p.display()), pal::ok());
         }
     }
 
@@ -279,7 +284,7 @@ impl KerfApp {
                 self.export.init(self.doc.project(), Some(p));
                 self.tl.fit_pending = true;
             }
-            Err(e) => self.toast(format!("Could not open: {e}"), RED),
+            Err(e) => self.toast(format!("Could not open: {e}"), pal::bad()),
         }
     }
 
@@ -322,12 +327,12 @@ impl KerfApp {
                         n += 1;
                     }
                 }
-                Err(e) => self.toast(format!("{}: {e}", f.display()), RED),
+                Err(e) => self.toast(format!("{}: {e}", f.display()), pal::bad()),
             }
         }
         if n > 0 {
             self.assets.ensure(&self.doc.project().media.clone());
-            self.toast(format!("Imported {n} file{}", if n == 1 { "" } else { "s" }), LIME);
+            self.toast(format!("Imported {n} file{}", if n == 1 { "" } else { "s" }), pal::ok());
         }
     }
 
@@ -430,7 +435,7 @@ impl KerfApp {
         }
         if k(cmd, Key::S) {
             self.save();
-            self.toast("Saved", LIME);
+            self.toast("Saved", pal::ok());
         }
         if k(cmd, Key::O) {
             self.open_dialog();
@@ -517,7 +522,7 @@ impl KerfApp {
         if k(Modifiers::NONE, Key::N) {
             self.snapping = !self.snapping;
             let s = if self.snapping { "Snapping on" } else { "Snapping off" };
-            self.toast(s, CYAN);
+            self.toast(s, pal::ink());
         }
         if k(Modifiers::NONE, Key::M) {
             let t = self.playhead;
@@ -572,7 +577,7 @@ impl KerfApp {
                 let valid: Vec<ClipId> = self.selection.iter().copied().filter(|c| self.project().timeline.find_clip(*c).is_some()).collect();
                 self.selection = valid;
                 self.agent_flash = Some(Instant::now());
-                self.toast("Synced external edit (Ctrl+Z to undo)", VIOLET);
+                self.toast("Synced external edit (Ctrl+Z to undo)", pal::info());
             }
             Ok(_) => {}
             Err(e) => log::warn!("reload: {e}"),
@@ -586,14 +591,14 @@ impl KerfApp {
             (std::mem::take(&mut s.proxy_done), std::mem::take(&mut s.errors))
         };
         for e in errors {
-            self.toast(e, RED);
+            self.toast(e, pal::bad());
         }
         for (id, path) in done {
             if let Some(m) = self.project().media_item(id) {
                 let mut m = m.clone();
                 m.proxy = Some(path);
                 self.edit(|d| d.apply(Command::UpdateMedia { item: m }));
-                self.toast("Proxy ready", LIME);
+                self.toast("Proxy ready", pal::ok());
             }
         }
         // Newest rendered frame.
@@ -636,66 +641,101 @@ impl KerfApp {
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
+        let h = 48.0;
         egui::Panel::top("top")
-            .exact_size(44.0)
-            .frame(egui::Frame::NONE.fill(BG).inner_margin(egui::Margin::symmetric(12, 0)))
+            .exact_size(h)
+            .frame(egui::Frame::NONE.fill(pal::bg()).inner_margin(egui::Margin::symmetric(16, 0)))
             .show(ui, |ui| {
+                let bottom = ui.max_rect().bottom();
+                ui.painter().line_segment(
+                    [egui::pos2(ui.max_rect().left() - 16.0, bottom - 0.5), egui::pos2(ui.max_rect().right() + 16.0, bottom - 0.5)],
+                    egui::Stroke::new(1.0, pal::rule()),
+                );
                 ui.horizontal_centered(|ui| {
-                    // Logo: a neon blade mark.
-                    let (r, _) = ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
-                    let p = ui.painter();
-                    let c = r.center();
-                    theme::glow_line(p, c + egui::vec2(-7.0, 8.0), c + egui::vec2(7.0, -8.0), CYAN, 2.5);
-                    p.circle_filled(c + egui::vec2(-7.0, 8.0), 2.5, VIOLET);
-                    ui.label(RichText::new("kerf").size(18.0).strong().color(Color32::WHITE));
-                    ui.add_space(6.0);
-                    self.menus(ui);
-                    ui.add_space(10.0);
-                    let dirty = self.doc.revision() != self.saved_rev;
-                    ui.label(RichText::new(&self.project().name).color(TEXT_DIM));
-                    if dirty {
-                        ui.label(RichText::new("⏺").color(AMBER).size(9.0));
-                    }
+                    // Wordmark: `kerf` in ink, the period faint, accent on hover.
+                    let g1 = ui.painter().layout_no_wrap("kerf".into(), theme::bold(16.0), pal::ink());
+                    let g2 = ui.painter().layout_no_wrap(".".into(), theme::bold(16.0), pal::faint());
+                    let (r, resp) = ui.allocate_exact_size(egui::vec2(g1.size().x + g2.size().x, 22.0), egui::Sense::hover());
+                    let y = r.center().y - g1.size().y / 2.0;
+                    let dot = if resp.hovered() { pal::accent() } else { pal::faint() };
+                    let w1 = g1.size().x;
+                    ui.painter().galley(egui::pos2(r.left(), y), g1, pal::ink());
+                    ui.painter().galley_with_override_text_color(egui::pos2(r.left() + w1, y), g2, dot);
+                    ui.label(RichText::new("/").color(pal::faint()));
+                    ui.label(RichText::new(self.project().name.to_lowercase()).color(pal::dim()));
+                    ui.add_space(16.0);
+                    // Menus read as nav words: no frame until hovered.
+                    ui.scope(|ui| {
+                        let w = &mut ui.style_mut().visuals.widgets;
+                        w.inactive.bg_stroke = egui::Stroke::NONE;
+                        w.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+                        w.inactive.fg_stroke = egui::Stroke::new(1.0, pal::dim());
+                        w.hovered.bg_stroke = egui::Stroke::NONE;
+                        w.open.bg_stroke = egui::Stroke::NONE;
+                        ui.spacing_mut().button_padding.x = 6.0;
+                        self.menus(ui);
+                    });
 
-                    // Workspace tabs, centred.
+                    // Workspaces as nav, centred, underline on the header's edge.
                     let avail = ui.available_width();
-                    ui.add_space((avail / 2.0 - 220.0).max(8.0));
+                    ui.add_space((avail / 2.0 - 190.0).max(8.0));
+                    ui.spacing_mut().item_spacing.x = 20.0;
                     for (w, name) in [
-                        (Workspace::Edit, "✂  EDIT"),
-                        (Workspace::Color, "🎨  COLOR"),
-                        (Workspace::Audio, "♫  AUDIO"),
-                        (Workspace::Deliver, "📤  DELIVER"),
+                        (Workspace::Edit, "edit"),
+                        (Workspace::Color, "color"),
+                        (Workspace::Audio, "audio"),
+                        (Workspace::Deliver, "deliver"),
                     ] {
-                        if theme::pill(ui, self.workspace == w, name).clicked() {
+                        if theme::nav(ui, self.workspace == w, name, bottom).clicked() {
                             self.workspace = w;
                         }
                     }
+                    ui.spacing_mut().item_spacing.x = 8.0;
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // The agent link: lit when a project file is being watched.
+                        // Theme toggle: a half-filled circle.
+                        let (tr, tresp) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::click());
+                        let c = tr.center();
+                        let col = if tresp.hovered() { pal::ink() } else { pal::dim() };
+                        ui.painter().circle_stroke(c, 7.0, egui::Stroke::new(1.2, col));
+                        let half: Vec<egui::Pos2> = (0..=16)
+                            .map(|i| {
+                                let a = std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / 16.0;
+                                c + egui::vec2(a.cos(), a.sin()) * 7.0
+                            })
+                            .collect();
+                        ui.painter().add(egui::Shape::convex_polygon(half, col, egui::Stroke::NONE));
+                        if tresp.on_hover_text("theme: system → dark → light").clicked() {
+                            self.theme_mode = match self.theme_mode {
+                                theme::Mode::System => theme::Mode::Dark,
+                                theme::Mode::Dark => theme::Mode::Light,
+                                theme::Mode::Light => theme::Mode::System,
+                            };
+                            save_settings(&Settings { theme: self.theme_mode });
+                        }
+                        ui.add_space(8.0);
+                        // The agent link, as a status tag.
                         let flash = self.agent_flash.map(|t| t.elapsed().as_secs_f32()).unwrap_or(99.0);
-                        let (txt, col) = if self.path.is_none() {
-                            ("AGENT LINK · unsaved", TEXT_FAINT)
+                        let r = if self.path.is_none() {
+                            theme::tag(ui, "agent link off", None)
                         } else if flash < 3.0 {
-                            ("AGENT EDIT SYNCED", VIOLET)
+                            theme::tag(ui, "agent edit synced", Some(pal::info()))
                         } else {
-                            ("AGENT LINK · LIVE", LIME)
+                            theme::tag(ui, "agent link", Some(pal::ok()))
                         };
-                        let r = ui.label(RichText::new(txt).size(10.5).color(col).strong());
-                        let dot = r.rect.left_center() - egui::vec2(9.0, 0.0);
-                        ui.painter().circle_filled(dot, 3.5, col);
-                        ui.painter().circle_filled(dot, 7.0, theme::alpha(col, 0.15));
                         if let Some(p) = &self.path {
                             r.on_hover_text(format!(
-                                "Agents edit this project with:\n  kerf -p {} <command>\nor the MCP server (kerf mcp).\nChanges appear here live and are undoable.",
+                                "agents edit this project with\n  kerf -p {} <command>\nor the mcp server (kerf mcp).\nchanges show up here live and are undoable.",
                                 p.display()
                             ));
+                        } else {
+                            r.on_hover_text("save the project to let agents edit it");
                         }
-                        ui.add_space(14.0);
-                        if theme::icon_button(ui, "⟳", false, "Redo (Ctrl+Shift+Z)").clicked() {
+                        ui.add_space(8.0);
+                        if theme::icon_button(ui, "redo", false, "ctrl+shift+z").clicked() {
                             self.edit(|d| d.redo());
                         }
-                        if theme::icon_button(ui, "⟲", false, "Undo (Ctrl+Z)").clicked() {
+                        if theme::icon_button(ui, "undo", false, "ctrl+z").clicked() {
                             self.edit(|d| d.undo());
                         }
                     });
@@ -704,22 +744,23 @@ impl KerfApp {
     }
 
     fn menus(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("File", |ui| {
-            if ui.button("New window          Ctrl+N").clicked() {
+        let item = |ui: &mut egui::Ui, label: &str, key: &str| ui.add(egui::Button::new(label).shortcut_text(RichText::new(key).color(pal::faint())));
+        ui.menu_button("file", |ui| {
+            if item(ui, "new window", "ctrl+n").clicked() {
                 self.new_window(None);
             }
-            if ui.button("Open…               Ctrl+O").clicked() {
+            if item(ui, "open…", "ctrl+o").clicked() {
                 self.open_dialog();
             }
-            if ui.button("Open in new window…").clicked() {
+            if item(ui, "open in new window…", "").clicked() {
                 if let Some(p) = rfd::FileDialog::new().add_filter("kerf project", &["kerf"]).pick_file() {
                     self.new_window(Some(&p));
                 }
             }
-            ui.menu_button("Open recent", |ui| {
+            ui.menu_button("open recent", |ui| {
                 let recent = self.recent.clone();
                 if recent.is_empty() {
-                    ui.label(RichText::new("Nothing yet").color(TEXT_FAINT));
+                    ui.label(RichText::new("nothing yet").color(pal::faint()));
                 }
                 for r in recent {
                     let name = Path::new(&r).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(r.clone());
@@ -729,74 +770,75 @@ impl KerfApp {
                 }
             });
             ui.separator();
-            if ui.button("Save                Ctrl+S").clicked() {
+            if item(ui, "save", "ctrl+s").clicked() {
                 self.save();
             }
-            if ui.button("Save as…            Ctrl+Shift+S").clicked() {
+            if item(ui, "save as…", "ctrl+shift+s").clicked() {
                 self.save_as();
             }
             ui.separator();
-            if ui.button("Import media…       Ctrl+I").clicked() {
+            if item(ui, "import media…", "ctrl+i").clicked() {
                 self.import_dialog();
             }
-            if ui.button("Export…             Ctrl+E").clicked() {
+            if item(ui, "export…", "ctrl+e").clicked() {
                 self.workspace = Workspace::Deliver;
             }
         });
-        ui.menu_button("Edit", |ui| {
-            if ui.add_enabled(self.doc.can_undo(), egui::Button::new("Undo   Ctrl+Z")).clicked() {
+        ui.menu_button("edit", |ui| {
+            if ui.add_enabled(self.doc.can_undo(), egui::Button::new("undo").shortcut_text("ctrl+z")).clicked() {
                 self.edit(|d| d.undo());
             }
-            if ui.add_enabled(self.doc.can_redo(), egui::Button::new("Redo   Ctrl+Shift+Z")).clicked() {
+            if ui.add_enabled(self.doc.can_redo(), egui::Button::new("redo").shortcut_text("ctrl+shift+z")).clicked() {
                 self.edit(|d| d.redo());
             }
             ui.separator();
-            if ui.button("Split at playhead     S").clicked() {
+            if item(ui, "split at playhead", "s").clicked() {
                 self.split_at_playhead();
             }
-            if ui.button("Delete                Del").clicked() {
+            if item(ui, "delete", "del").clicked() {
                 self.delete_selection(false);
             }
-            if ui.button("Ripple delete         Shift+Del").clicked() {
+            if item(ui, "ripple delete", "shift+del").clicked() {
                 self.delete_selection(true);
             }
-            if ui.button("Close all gaps").clicked() {
+            if item(ui, "close all gaps", "").clicked() {
                 if let Some(n) = self.edit(|d| d.close_gaps()) {
-                    self.toast(format!("Closed {n} gap(s)"), CYAN);
+                    self.toast(format!("closed {n} gap(s)"), pal::ok());
                 }
             }
             if let (Some(a), Some(b)) = (self.mark_in, self.mark_out) {
-                if b > a && ui.button("Cut out In›Out (ripple)").clicked() {
+                if b > a && item(ui, "cut out in → out", "").clicked() {
                     self.edit(|d| d.delete_range(kerf_core::TimeRange::from_bounds(a, b), true));
                     self.mark_in = None;
                     self.mark_out = None;
                 }
             }
             ui.separator();
-            if ui.button("Keyboard shortcuts    F1").clicked() {
+            if item(ui, "keyboard shortcuts", "f1").clicked() {
                 self.show_help = true;
             }
         });
-        ui.menu_button("Timeline", |ui| {
-            if ui.button("Add video track").clicked() {
+        ui.menu_button("timeline", |ui| {
+            if item(ui, "add video track", "").clicked() {
                 self.edit(|d| d.add_track(TrackKind::Video));
             }
-            if ui.button("Add audio track").clicked() {
+            if item(ui, "add audio track", "").clicked() {
                 self.edit(|d| d.add_track(TrackKind::Audio));
             }
             ui.separator();
-            ui.label(RichText::new("FORMAT").size(10.0).color(TEXT_DIM));
+            ui.label(RichText::new("// format").font(theme::mono(FS_XS)).color(pal::faint()));
             let tl = self.project().timeline.clone();
             for (name, w, h) in [
-                ("1080p  1920×1080", 1920, 1080),
-                ("4K UHD  3840×2160", 3840, 2160),
-                ("720p  1280×720", 1280, 720),
-                ("Vertical  1080×1920", 1080, 1920),
-                ("Square  1080×1080", 1080, 1080),
-                ("Portrait 4:5  1080×1350", 1080, 1350),
+                ("1080p", 1920, 1080),
+                ("4k uhd", 3840, 2160),
+                ("720p", 1280, 720),
+                ("vertical", 1080, 1920),
+                ("square", 1080, 1080),
+                ("portrait 4:5", 1080, 1350),
             ] {
                 let on = tl.width == w && tl.height == h;
-                if ui.selectable_label(on, name).clicked() {
+                let label = format!("{name:<13}{w}×{h}");
+                if ui.selectable_label(on, label).clicked() {
                     self.edit(|d| d.apply(Command::SetFormat { width: w, height: h, fps: tl.fps, background: tl.background }));
                     self.export.init(self.doc.project(), self.path.as_deref());
                 }
@@ -809,101 +851,122 @@ impl KerfApp {
                         self.export.init(self.doc.project(), self.path.as_deref());
                     }
                 }
-                ui.label(RichText::new("fps").color(TEXT_DIM));
+                ui.label(RichText::new("fps").color(pal::faint()));
             });
         });
-        ui.menu_button("View", |ui| {
-            ui.checkbox(&mut self.proxies_on, "Use proxies in preview");
-            ui.checkbox(&mut self.show_safe, "Safe-area guides");
-            ui.checkbox(&mut self.looping, "Loop playback (In›Out)");
-            ui.checkbox(&mut self.snapping, "Snapping (N)");
-            ui.checkbox(&mut self.tl.follow, "Follow playhead");
+        ui.menu_button("view", |ui| {
+            ui.checkbox(&mut self.proxies_on, "preview from proxies");
+            ui.checkbox(&mut self.show_safe, "safe-area guides");
+            ui.checkbox(&mut self.looping, "loop in → out");
+            ui.checkbox(&mut self.snapping, "snapping");
+            ui.checkbox(&mut self.tl.follow, "follow playhead");
+            ui.separator();
+            for (m, n) in [(theme::Mode::System, "theme: system"), (theme::Mode::Dark, "theme: dark"), (theme::Mode::Light, "theme: light")] {
+                if ui.selectable_label(self.theme_mode == m, n).clicked() {
+                    self.theme_mode = m;
+                    save_settings(&Settings { theme: m });
+                }
+            }
         });
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         egui::Panel::bottom("status")
             .exact_size(24.0)
-            .frame(egui::Frame::NONE.fill(BG).inner_margin(egui::Margin::symmetric(12, 0)))
+            .frame(egui::Frame::NONE.fill(pal::bg()).inner_margin(egui::Margin::symmetric(16, 0)))
             .show(ui, |ui| {
+                let top = ui.max_rect().top();
+                ui.painter().line_segment(
+                    [egui::pos2(ui.max_rect().left() - 16.0, top + 0.5), egui::pos2(ui.max_rect().right() + 16.0, top + 0.5)],
+                    egui::Stroke::new(1.0, pal::rule()),
+                );
                 ui.horizontal_centered(|ui| {
                     let tl = &self.project().timeline;
-                    let s = |t: String| RichText::new(t).size(10.5).color(TEXT_DIM).family(egui::FontFamily::Monospace);
-                    ui.label(s(format!("{}×{} · {} fps", tl.width, tl.height, tl.fps)));
-                    ui.label(s(format!("· {} clips · {} media", tl.clips().count(), self.project().media.len())));
-                    ui.label(s(format!("· render {:.1} ms", self.render_ms)));
-                    ui.label(s(format!("· preview {} {}", self.quality.label(), if self.proxies_on { "proxy" } else { "orig" })));
-                    let tool = if self.tool == Tool::Blade { "BLADE" } else { "SELECT" };
-                    ui.label(s(format!("· tool {tool}")));
-                    if self.snapping {
-                        ui.label(RichText::new("· SNAP").size(10.5).color(CYAN));
-                    }
+                    let s = |t: String| RichText::new(t).font(theme::mono(FS_2XS)).color(pal::faint());
+                    let tool = if self.tool == Tool::Blade { "blade" } else { "select" };
+                    let line = format!(
+                        "{}×{} · {} fps · {} clips · {} media · render {:.0} ms · preview {} {} · {}{}",
+                        tl.width,
+                        tl.height,
+                        tl.fps,
+                        tl.clips().count(),
+                        self.project().media.len(),
+                        self.render_ms,
+                        self.quality.label(),
+                        if self.proxies_on { "proxy" } else { "orig" },
+                        tool,
+                        if self.snapping { " · snap" } else { "" },
+                    );
+                    ui.label(s(line));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if let Some(p) = &self.path {
                             let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                             ui.label(s(name)).on_hover_text(p.display().to_string());
                         } else {
-                            ui.label(s("unsaved · first edit saves to ~/Videos/kerf".into()));
+                            ui.label(s("unsaved · the first edit saves to ~/videos/kerf".into()));
                         }
                     });
                 });
             });
     }
 
+    /// One toast at a time, bottom-centre, ~2.6 s, fades and rises in.
     fn draw_toasts(&mut self, ctx: &egui::Context) {
-        self.toasts.retain(|t| t.at.elapsed() < Duration::from_secs(4));
-        if self.toasts.is_empty() {
-            return;
-        }
+        let life = 2.6;
+        self.toasts.retain(|t| t.at.elapsed().as_secs_f32() < life);
+        let Some(t) = self.toasts.last() else { return };
         let screen = ctx.content_rect();
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("toasts")));
-        let mut y = screen.bottom() - 40.0;
-        for t in self.toasts.iter().rev().take(4) {
-            let age = t.at.elapsed().as_secs_f32();
-            let a = (4.0 - age).clamp(0.0, 0.4) / 0.4;
-            let galley = painter.layout_no_wrap(t.text.clone(), theme::prop(12.5), theme::alpha(TEXT, a));
-            let w = galley.size().x + 36.0;
-            let rect = egui::Rect::from_min_size(egui::pos2(screen.right() - w - 16.0, y - 34.0), egui::vec2(w, 32.0));
-            painter.rect_filled(rect, 8, theme::alpha(PANEL_HI, 0.96 * a));
-            painter.rect_stroke(rect, 8, egui::Stroke::new(1.0, theme::alpha(t.color, 0.7 * a)), egui::StrokeKind::Inside);
-            painter.circle_filled(rect.left_center() + egui::vec2(14.0, 0.0), 3.5, theme::alpha(t.color, a));
-            painter.galley(rect.left_center() + egui::vec2(26.0, -galley.size().y / 2.0), galley, TEXT);
-            y -= 40.0;
+        let age = t.at.elapsed().as_secs_f32();
+        let a = (age / 0.2).min(1.0).min((life - age) / 0.3).clamp(0.0, 1.0);
+        let rise = (1.0 - (age / 0.2).min(1.0)) * 10.0;
+        let mut text = t.text.clone();
+        if let Some(f) = text.get(0..1) {
+            text = f.to_lowercase() + &text[1..];
         }
-        ctx.request_repaint_after(Duration::from_millis(100));
+        let galley = painter.layout_no_wrap(text, theme::mono(FS_SM), theme::alpha(pal::body(), a));
+        let w = galley.size().x + 40.0;
+        let rect = egui::Rect::from_center_size(egui::pos2(screen.center().x, screen.bottom() - 64.0 + rise), egui::vec2(w, 34.0));
+        // `--shadow-pop`: only floating things get a shadow.
+        painter.add(egui::Shadow { offset: [0, 6], blur: 20, spread: 0, color: egui::Color32::from_black_alpha((90.0 * a) as u8) }.as_shape(rect, theme::R_CARD));
+        painter.rect_filled(rect, theme::R_CARD, theme::alpha(pal::raised(), a));
+        painter.rect_stroke(rect, theme::R_CARD, egui::Stroke::new(1.0, theme::alpha(pal::rule_strong(), a)), egui::StrokeKind::Inside);
+        painter.circle_filled(rect.left_center() + egui::vec2(16.0, 0.0), 3.0, theme::alpha(t.color, a));
+        painter.galley(rect.left_center() + egui::vec2(28.0, -galley.size().y / 2.0), galley, pal::body());
+        ctx.request_repaint_after(Duration::from_millis(30));
     }
 
     fn help_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_help;
-        egui::Window::new("Keyboard shortcuts")
+        egui::Window::new(RichText::new("// keyboard").font(theme::mono(FS_XS)).color(pal::faint()))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
-            .default_width(420.0)
+            .default_width(440.0)
             .show(ctx, |ui| {
-                egui::Grid::new("keys").num_columns(2).spacing([24.0, 6.0]).show(ui, |ui| {
+                egui::Grid::new("keys").num_columns(2).spacing([28.0, 7.0]).show(ui, |ui| {
                     for (k, d) in [
-                        ("Space / K / L", "Play-pause / pause / play"),
-                        ("J", "Jump back 2 s"),
-                        ("‹ ›  (Shift)", "Step a frame (a second)"),
-                        ("⬆ ⬇", "Previous / next edit point"),
-                        ("Home / End", "Start / end"),
-                        ("I / O / Alt+X", "Mark in / out / clear"),
-                        ("S  or  Ctrl+B", "Split at playhead"),
-                        ("B / A", "Blade / select tool"),
-                        ("Del / Shift+Del", "Delete / ripple delete"),
-                        ("M / T", "Add marker / title"),
-                        ("N", "Toggle snapping"),
-                        ("+ / − / Shift+Z", "Zoom in / out / fit"),
-                        ("Ctrl+wheel", "Zoom at mouse"),
-                        ("Alt+drag", "Move without linked clip"),
-                        ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"),
-                        ("Ctrl+S / Ctrl+O / Ctrl+I", "Save / open / import"),
-                        ("Ctrl+N", "New window"),
-                        ("Ctrl+E", "Deliver (export)"),
+                        ("space  k  l", "play-pause, pause, play"),
+                        ("j", "back 2 s"),
+                        ("← →  (shift)", "one frame (one second)"),
+                        ("↑ ↓", "previous / next edit point"),
+                        ("home  end", "start / end"),
+                        ("i  o  alt+x", "mark in, out, clear"),
+                        ("s  ctrl+b", "split at the playhead"),
+                        ("b  a", "blade / select tool"),
+                        ("del  shift+del", "delete / ripple delete"),
+                        ("m  t", "add marker / title"),
+                        ("n", "snapping"),
+                        ("+  −  shift+z", "zoom in, out, fit"),
+                        ("ctrl+wheel", "zoom at the mouse"),
+                        ("alt+drag", "move without the linked clip"),
+                        ("ctrl+z  ctrl+shift+z", "undo / redo"),
+                        ("ctrl+s  ctrl+o  ctrl+i", "save, open, import"),
+                        ("ctrl+n", "new window"),
+                        ("ctrl+e", "deliver"),
                     ] {
-                        ui.label(RichText::new(k).family(egui::FontFamily::Monospace).color(CYAN));
-                        ui.label(d);
+                        ui.label(RichText::new(k).color(pal::ink()));
+                        ui.label(RichText::new(d).color(pal::dim()));
                         ui.end_row();
                     }
                 });
@@ -912,9 +975,36 @@ impl KerfApp {
     }
 }
 
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct Settings {
+    #[serde(default)]
+    theme: theme::Mode,
+}
+
+fn settings_file() -> PathBuf {
+    recent_file().with_file_name("settings.json")
+}
+
+fn load_settings() -> Settings {
+    std::fs::read_to_string(settings_file()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+fn save_settings(s: &Settings) {
+    let _ = std::fs::write(settings_file(), serde_json::to_string_pretty(s).unwrap_or_default());
+}
+
 impl eframe::App for KerfApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let light = match self.theme_mode {
+            theme::Mode::Light => true,
+            theme::Mode::Dark => false,
+            theme::Mode::System => ctx.system_theme() == Some(egui::Theme::Light),
+        };
+        if light != theme::is_light() || !self.theme_applied {
+            theme::apply(&ctx, light);
+            self.theme_applied = true;
+        }
         // Files dropped onto the window are imported.
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
         if !dropped.is_empty() {
@@ -954,22 +1044,22 @@ impl eframe::App for KerfApp {
             .resizable(true)
             .default_size(330.0)
             .size_range(180.0..=800.0)
-            .frame(egui::Frame::NONE.fill(PANEL).stroke(egui::Stroke::new(1.0, LINE)))
+            .frame(egui::Frame::NONE.fill(pal::bg()).stroke(egui::Stroke::new(1.0, pal::rule())))
             .show(ui, |ui| crate::timeline::show(self, ui));
         egui::Panel::left("left")
             .resizable(true)
             .default_size(270.0)
             .size_range(200.0..=480.0)
-            .frame(egui::Frame::NONE.fill(PANEL).inner_margin(egui::Margin::same(10)).stroke(egui::Stroke::new(1.0, LINE)))
+            .frame(egui::Frame::NONE.fill(pal::bg()).inner_margin(egui::Margin::same(10)).stroke(egui::Stroke::new(1.0, pal::rule())))
             .show(ui, |ui| crate::panels::left_panel(self, ui));
         egui::Panel::right("right")
             .resizable(true)
             .default_size(320.0)
             .size_range(260.0..=520.0)
-            .frame(egui::Frame::NONE.fill(PANEL).inner_margin(egui::Margin::same(10)).stroke(egui::Stroke::new(1.0, LINE)))
+            .frame(egui::Frame::NONE.fill(pal::bg()).inner_margin(egui::Margin::same(10)).stroke(egui::Stroke::new(1.0, pal::rule())))
             .show(ui, |ui| crate::panels::right_panel(self, ui));
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(BG))
+            .frame(egui::Frame::NONE.fill(pal::bg()))
             .show(ui, |ui| crate::viewer::show(self, ui));
 
         self.draw_toasts(&ctx);

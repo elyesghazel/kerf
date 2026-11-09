@@ -5,7 +5,7 @@ can cut alongside you.
 
 *kerf* (n.): the slit a blade leaves when it cuts.
 
-- **kerf studio** (`kerf-studio`): the desktop editor. Multi-track timeline,
+- **kerf studio** (`kerf-studio`): the desktop editor, styled with the eg. design system (black, JetBrains Mono, hairlines, dark + light). Multi-track timeline,
   colour page with scopes, audio mixer, titles, export. egui + a CPU compositor,
   so it starts instantly and runs on a laptop iGPU.
 - **kerf** (`kerf`): the same engine headless. A CLI and an MCP server for agents

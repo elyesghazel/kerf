@@ -7,9 +7,9 @@ use kerf_core::{Clip, ClipContent, ClipId, Command, Edge, MediaId, Time, Track, 
 use crate::app::{KerfApp, Tool, Workspace};
 use crate::theme::{self, *};
 
-const HEAD_W: f32 = 132.0;
-const RULER_H: f32 = 28.0;
-const VIDEO_H: f32 = 66.0;
+const HEAD_W: f32 = 140.0;
+const RULER_H: f32 = 26.0;
+const VIDEO_H: f32 = 64.0;
 const AUDIO_H: f32 = 52.0;
 const EDGE_PX: f32 = 7.0;
 const SNAP_PX: f32 = 9.0;
@@ -183,21 +183,20 @@ pub fn show(app: &mut KerfApp, ui: &mut egui::Ui) {
     let lane_at = |p: Pos2| lanes.iter().position(|l| l.rect.contains(p) && body.contains(p));
 
     let painter = ui.painter_at(full);
-    painter.rect_filled(full, 0, PANEL);
+    painter.rect_filled(full, 0, pal::bg());
     for (i, l) in lanes.iter().enumerate() {
         let r = l.rect.intersect(body);
         if r.height() <= 0.0 {
             continue;
         }
-        let shade = if i % 2 == 0 { Color32::from_rgb(10, 13, 19) } else { Color32::from_rgb(12, 15, 22) };
+        let shade = if i % 2 == 0 { pal::lane_a() } else { pal::lane_b() };
         painter.rect_filled(r, 0, shade);
     }
 
     // In/out region.
     if let (Some(a), Some(b)) = (app.mark_in, app.mark_out) {
         if b > a {
-            let r = Rect::from_x_y_ranges(x_of(a)..=x_of(b), body.y_range());
-            painter.rect_filled(r.intersect(body), 0, theme::alpha(VIOLET, 0.05));
+            let _ = (a, b);
         }
     }
 
@@ -667,15 +666,15 @@ pub fn show(app: &mut KerfApp, ui: &mut egui::Ui) {
         if let Some((gl, t, dur)) = drop_ghost {
             if gl == li {
                 let r = Rect::from_x_y_ranges(x_of(t)..=x_of(t + dur), (lane.rect.top() + 3.0)..=(lane.rect.bottom() - 3.0));
-                body_painter.rect_filled(r, 6, theme::alpha(CYAN, 0.12));
-                theme::glow_rect(&body_painter, r, 6, CYAN);
+                body_painter.rect_filled(r, R_CARD, pal::hover());
+                body_painter.rect_stroke(r, R_CARD, Stroke::new(1.0, pal::ink()), StrokeKind::Inside);
             }
         }
     }
 
     // ---- ruler
-    painter.rect_filled(ruler, 0, BG);
-    painter.line_segment([ruler.left_bottom(), ruler.right_bottom()], Stroke::new(1.0, LINE));
+    painter.rect_filled(ruler, 0, pal::bg());
+    painter.line_segment([ruler.left_bottom(), ruler.right_bottom()], Stroke::new(1.0, pal::rule()));
     let step = nice_step(pps, fps);
     let first = (scroll / step).floor() as i64;
     let last = ((scroll + visible) / step).ceil() as i64;
@@ -685,42 +684,41 @@ pub fn show(app: &mut KerfApp, ui: &mut egui::Ui) {
             continue;
         }
         let x = left + ((t - scroll) as f32) * pps;
-        painter.line_segment([pos2(x, ruler.bottom() - 9.0), pos2(x, ruler.bottom())], Stroke::new(1.0, TEXT_FAINT));
-        painter.text(
-            pos2(x + 4.0, ruler.top() + 4.0),
-            egui::Align2::LEFT_TOP,
-            short_tc(t, fps, step),
-            theme::mono(10.0),
-            TEXT_DIM,
-        );
+        painter.line_segment([pos2(x, ruler.bottom() - 8.0), pos2(x, ruler.bottom())], Stroke::new(1.0, pal::rule_strong()));
+        painter.text(pos2(x + 4.0, ruler.top() + 5.0), egui::Align2::LEFT_TOP, short_tc(t, fps, step), theme::mono(FS_2XS), pal::faint());
         for k in 1..5 {
             let xm = x + (k as f32) * (step as f32) * pps / 5.0;
-            painter.line_segment([pos2(xm, ruler.bottom() - 4.0), pos2(xm, ruler.bottom())], Stroke::new(1.0, LINE));
+            painter.line_segment([pos2(xm, ruler.bottom() - 3.0), pos2(xm, ruler.bottom())], Stroke::new(1.0, pal::rule()));
         }
     }
+    // In/out: a quiet wash with brackets.
     if let (Some(a), Some(b)) = (app.mark_in, app.mark_out) {
         if b > a {
-            let r = Rect::from_x_y_ranges(x_of(a)..=x_of(b), (ruler.bottom() - 5.0)..=ruler.bottom());
-            painter.rect_filled(r.intersect(ruler), 0, theme::alpha(VIOLET, 0.8));
+            let r = Rect::from_x_y_ranges(x_of(a)..=x_of(b), (ruler.bottom() - 4.0)..=ruler.bottom());
+            painter.rect_filled(r.intersect(ruler), 0, pal::dim());
+            let wash = Rect::from_x_y_ranges(x_of(a)..=x_of(b), body.y_range());
+            body_painter.rect_filled(wash.intersect(body), 0, theme::alpha(pal::ink(), 0.03));
         }
     }
-    for t in [app.mark_in, app.mark_out].into_iter().flatten() {
+    for (t, dir) in [(app.mark_in, 1.0), (app.mark_out, -1.0)] {
+        let Some(t) = t else { continue };
         let x = x_of(t);
-        painter.line_segment([pos2(x, ruler.top()), pos2(x, ruler.bottom())], Stroke::new(1.5, VIOLET));
+        let s = Stroke::new(1.0, pal::ink());
+        painter.line_segment([pos2(x, ruler.top() + 4.0), pos2(x, ruler.bottom())], s);
+        painter.line_segment([pos2(x, ruler.top() + 4.0), pos2(x + 5.0 * dir, ruler.top() + 4.0)], s);
     }
     for m in app.project().timeline.markers.clone() {
         let x = x_of(m.time);
         if x < ruler.left() || x > ruler.right() {
             continue;
         }
-        let c = Color32::from_rgb(m.color[0], m.color[1], m.color[2]);
-        let y = ruler.bottom() - 8.0;
+        let y = ruler.bottom() - 7.0;
         painter.add(egui::Shape::convex_polygon(
-            vec![pos2(x, y - 6.0), pos2(x + 5.0, y), pos2(x, y + 6.0), pos2(x - 5.0, y)],
-            c,
+            vec![pos2(x, y - 4.5), pos2(x + 4.5, y), pos2(x, y + 4.5), pos2(x - 4.5, y)],
+            pal::ink(),
             Stroke::NONE,
         ));
-        body_painter.line_segment([pos2(x, body.top()), pos2(x, body.bottom())], Stroke::new(1.0, theme::alpha(c, 0.25)));
+        body_painter.extend(egui::Shape::dashed_line(&[pos2(x, body.top()), pos2(x, body.bottom())], Stroke::new(1.0, pal::rule_strong()), 3.0, 4.0));
         if let Some(p) = ptr {
             if (p.x - x).abs() < 6.0 && ruler.contains(p) {
                 resp.clone().on_hover_text(format!("{}  {}", m.label, m.time.timecode(fps)));
@@ -731,7 +729,7 @@ pub fn show(app: &mut KerfApp, ui: &mut egui::Ui) {
     // ---- snap guide, blade hover, playhead
     if let Some(s) = snap_line {
         let x = x_of(s);
-        painter.line_segment([pos2(x, ruler.top()), pos2(x, body.bottom())], Stroke::new(1.0, theme::alpha(AMBER, 0.9)));
+        painter.line_segment([pos2(x, ruler.top()), pos2(x, body.bottom())], Stroke::new(1.0, pal::info()));
     }
     if app.tool == Tool::Blade {
         if let Some(p) = ptr {
@@ -739,26 +737,20 @@ pub fn show(app: &mut KerfApp, ui: &mut egui::Ui) {
                 let near_ph = ((x_of(app.playhead) - p.x).abs()) < SNAP_PX;
                 let x = if near_ph { x_of(app.playhead) } else { p.x };
                 let lr = lanes[li].rect;
-                theme::glow_line(&body_painter, pos2(x, lr.top()), pos2(x, lr.bottom()), MAGENTA, 1.5);
+                body_painter.extend(egui::Shape::dashed_line(&[pos2(x, lr.top()), pos2(x, lr.bottom())], Stroke::new(1.0, pal::ink()), 4.0, 3.0));
             }
         }
     }
+    // The playhead is "now": the one place the accent is used.
     let px = x_of(app.playhead);
     if px >= lanes_area.left() - 1.0 && px <= lanes_area.right() + 1.0 {
-        theme::glow_line(&painter, pos2(px, ruler.top() + 12.0), pos2(px, body.bottom()), CYAN, 1.5);
-        let top = ruler.top() + 2.0;
+        let top = ruler.top() + 3.0;
+        painter.line_segment([pos2(px, top + 8.0), pos2(px, body.bottom())], Stroke::new(1.0, pal::accent()));
         painter.add(egui::Shape::convex_polygon(
-            vec![
-                pos2(px - 7.0, top),
-                pos2(px + 7.0, top),
-                pos2(px + 7.0, top + 10.0),
-                pos2(px, top + 17.0),
-                pos2(px - 7.0, top + 10.0),
-            ],
-            CYAN,
+            vec![pos2(px - 5.0, top), pos2(px + 5.0, top), pos2(px + 5.0, top + 6.0), pos2(px, top + 11.0), pos2(px - 5.0, top + 6.0)],
+            pal::accent(),
             Stroke::NONE,
         ));
-        painter.circle_filled(pos2(px, top + 17.0), 8.0, theme::alpha(CYAN, 0.08));
     }
 
     // ---- track headers (drawn last so they cover clips scrolled under them)
@@ -788,32 +780,32 @@ fn move_selected(d: &mut kerf_core::Document, ids: &[ClipId], delta: Time, track
 
 fn clip_menu(app: &mut KerfApp, ui: &mut egui::Ui) {
     let Some(id) = app.tl.ctx_clip else {
-        if ui.button("Add marker here").clicked() {
+        if ui.button("add marker here").clicked() {
             let t = app.playhead;
-            app.edit(|d| d.add_marker(t, "Marker"));
+            app.edit(|d| d.add_marker(t, "marker"));
             ui.close();
         }
-        if ui.button("Close all gaps").clicked() {
+        if ui.button("close all gaps").clicked() {
             app.edit(|d| d.close_gaps());
             ui.close();
         }
         return;
     };
     let ph = app.playhead;
-    if ui.button("Split at playhead").clicked() {
+    if ui.button("split at playhead").clicked() {
         app.edit(|d| d.split(id, ph));
         ui.close();
     }
-    if ui.button("Delete").clicked() {
+    if ui.button("delete").clicked() {
         app.delete_selection(false);
         ui.close();
     }
-    if ui.button("Ripple delete").clicked() {
+    if ui.button("ripple delete").clicked() {
         app.delete_selection(true);
         ui.close();
     }
     ui.separator();
-    if ui.button("Fade in + out 0.5 s").clicked() {
+    if ui.button("fade in + out 0.5 s").clicked() {
         app.edit(|d| {
             d.edit_clip(id, |c| {
                 c.fade_in = Time::from_secs_f64(0.5);
@@ -822,7 +814,7 @@ fn clip_menu(app: &mut KerfApp, ui: &mut egui::Ui) {
         });
         ui.close();
     }
-    if ui.button("Remove fades").clicked() {
+    if ui.button("remove fades").clicked() {
         app.edit(|d| {
             d.edit_clip(id, |c| {
                 c.fade_in = Time::ZERO;
@@ -832,7 +824,7 @@ fn clip_menu(app: &mut KerfApp, ui: &mut egui::Ui) {
         ui.close();
     }
     let linked = app.project().timeline.find_clip(id).and_then(|(_, c)| c.link).is_some();
-    if linked && ui.button("Unlink audio/video").clicked() {
+    if linked && ui.button("unlink audio and video").clicked() {
         let ids: Vec<ClipId> = app.project().timeline.linked(id).into_iter().map(|x| x.1).collect();
         app.edit(|d| {
             let mut cmds = vec![];
@@ -846,14 +838,14 @@ fn clip_menu(app: &mut KerfApp, ui: &mut egui::Ui) {
         });
         ui.close();
     }
-    if ui.button("Jump to clip start").clicked() {
+    if ui.button("jump to clip start").clicked() {
         if let Some((_, c)) = app.project().timeline.find_clip(id) {
             let s = c.start;
             app.seek(s);
         }
         ui.close();
     }
-    if ui.button("Color grade…").clicked() {
+    if ui.button("color grade…").clicked() {
         app.workspace = Workspace::Color;
         ui.close();
     }
@@ -875,24 +867,23 @@ fn draw_clip(
     if r.width() < 1.0 {
         return;
     }
-    let (base, accent) = match &c.content {
-        ClipContent::Media { .. } if track.kind == TrackKind::Audio => (CLIP_AUDIO, LIME),
-        ClipContent::Media { .. } => (CLIP_VIDEO, CYAN),
-        ClipContent::Text(_) => (CLIP_TEXT, VIOLET),
-        ClipContent::Solid { color } => (Color32::from_rgb(color[0] / 2, color[1] / 2, color[2] / 2), AMBER),
+    let base = match &c.content {
+        ClipContent::Media { .. } if track.kind == TrackKind::Audio => pal::clip_audio(),
+        ClipContent::Media { .. } => pal::clip_video(),
+        ClipContent::Text(_) => pal::clip_text(),
+        ClipContent::Solid { color } => Color32::from_rgb(color[0], color[1], color[2]),
     };
-    let rr = CornerRadius::same(6);
+    let rr = CornerRadius::same(R_CTRL);
     p.rect_filled(r, rr, theme::alpha(base, a));
     let inner = p.with_clip_rect(r.shrink(1.0).intersect(clip_to));
-    let label_h = 16.0;
+    let label_h = 17.0;
 
     match &c.content {
         ClipContent::Media { media } if track.kind == TrackKind::Video => {
             if let Some(th) = app.assets.thumbs(*media) {
-                let tile_h = r.height() - label_h - 2.0;
+                let tile_h = r.height() - label_h;
                 let tile_w = (th.w as f32 / th.h as f32 * tile_h).max(8.0);
                 let mut x = r.left();
-                // Start at the first visible tile.
                 if x < clip_to.left() {
                     x += ((clip_to.left() - x) / tile_w).floor() * tile_w;
                 }
@@ -901,7 +892,8 @@ fn draw_clip(
                     let idx = (src / th.interval as f64).floor().max(0.0) as usize;
                     if let Some((tex, _)) = app.assets.thumb_texture(ctx, *media, idx) {
                         let tr = Rect::from_min_size(pos2(x, r.top() + label_h), vec2(tile_w, tile_h));
-                        inner.image(tex.id(), tr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), theme::alpha(Color32::WHITE, 0.85 * a));
+                        inner.image(tex.id(), tr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), theme::alpha(Color32::WHITE, a));
+                        inner.line_segment([tr.right_top(), tr.right_bottom()], Stroke::new(1.0, theme::alpha(Color32::BLACK, 0.5 * a)));
                     }
                     x += tile_w;
                 }
@@ -909,93 +901,96 @@ fn draw_clip(
         }
         ClipContent::Media { media } => {
             if let Some(w) = app.assets.wave(*media) {
-                let mid = r.center().y + label_h / 2.0 - 2.0;
+                let mid = r.top() + label_h + (r.height() - label_h) / 2.0;
                 let half = (r.height() - label_h) / 2.0 - 3.0;
                 let gain = (c.volume * track.volume).clamp(0.0, 2.0);
                 let x0 = r.left().max(clip_to.left());
                 let x1 = r.right().min(clip_to.right());
                 let mut x = x0;
-                let col = theme::alpha(LIME, 0.75 * a);
+                let col = theme::alpha(if selected { pal::body() } else { pal::dim() }, a);
                 while x < x1 {
                     let s0 = c.source_in.as_secs_f64() + ((x - r.left()) / pps) as f64;
                     let s1 = s0 + (2.0 / pps) as f64;
                     let tl_t = c.start + Time::from_secs_f64(((x - r.left()) / pps) as f64);
                     let pk = (w.peak(s0, s1) * gain * c.fade_gain(tl_t)).min(1.0);
                     let h = (pk * half).max(0.5);
-                    inner.line_segment([pos2(x, mid - h), pos2(x, mid + h)], Stroke::new(1.4, col));
+                    inner.line_segment([pos2(x, mid - h), pos2(x, mid + h)], Stroke::new(1.0, col));
                     x += 2.0;
                 }
             }
         }
         ClipContent::Text(s) => {
             inner.text(
-                pos2(r.left() + 8.0, r.center().y + 6.0),
+                pos2(r.left() + 8.0, r.top() + label_h + (r.height() - label_h) / 2.0),
                 egui::Align2::LEFT_CENTER,
-                format!("T  {}", s.text.replace('\n', " ")),
-                theme::prop(12.0),
-                theme::alpha(Color32::WHITE, 0.9 * a),
+                s.text.replace('\n', " "),
+                theme::mono(FS_SM),
+                theme::alpha(pal::ink(), a),
             );
         }
         ClipContent::Solid { .. } => {}
     }
 
-    // Label strip.
+    // Label row: name in body, kind tag-like prefix in faint.
     let strip = Rect::from_min_size(r.min, vec2(r.width(), label_h));
-    inner.rect_filled(strip, CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 }, theme::alpha(Color32::BLACK, 0.35 * a));
-    let mut name = if c.name.is_empty() { "clip".to_string() } else { c.name.clone() };
-    if c.link.is_some() {
-        name = format!("⛓ {name}");
+    inner.rect_filled(strip, 0, theme::alpha(pal::raised(), 0.92 * a));
+    inner.line_segment([strip.left_bottom(), strip.right_bottom()], Stroke::new(1.0, theme::alpha(pal::rule(), a)));
+    let kind = match &c.content {
+        ClipContent::Text(_) => "title",
+        ClipContent::Solid { .. } => "matte",
+        _ if c.link.is_some() => "a/v",
+        _ => "",
+    };
+    let name = if c.name.is_empty() { "clip".to_string() } else { c.name.to_lowercase() };
+    let nr = inner.text(pos2(r.left() + 6.0, strip.center().y), egui::Align2::LEFT_CENTER, name, theme::mono(FS_2XS), theme::alpha(pal::body(), a));
+    if !kind.is_empty() {
+        inner.text(pos2(nr.right() + 8.0, strip.center().y), egui::Align2::LEFT_CENTER, kind, theme::mono(FS_2XS), theme::alpha(pal::faint(), a));
     }
-    inner.text(pos2(r.left() + 6.0, r.top() + 2.0), egui::Align2::LEFT_TOP, name, theme::prop(10.5), theme::alpha(TEXT, a));
     if !c.grade.is_identity() {
-        inner.circle_filled(pos2(r.right() - 9.0, r.top() + 8.0), 3.0, theme::alpha(MAGENTA, a));
+        inner.text(pos2(r.right() - 6.0, strip.center().y), egui::Align2::RIGHT_CENTER, "graded", theme::mono(FS_2XS), theme::alpha(pal::faint(), a));
     }
 
-    // Fades: darkened ramps + handles.
-    let fade_col = theme::alpha(Color32::BLACK, 0.45 * a);
+    // Fades: a dimmed ramp with a hairline edge.
+    let fade_col = theme::alpha(Color32::BLACK, 0.5 * a);
+    let edge = Stroke::new(1.0, theme::alpha(pal::body(), 0.8 * a));
     if c.fade_in > Time::ZERO {
         let fx = r.left() + (c.fade_in.as_secs_f64() as f32) * pps;
-        inner.add(egui::Shape::convex_polygon(vec![r.left_top(), pos2(fx, r.top()), r.left_bottom()], fade_col, Stroke::NONE));
-        inner.line_segment([r.left_bottom(), pos2(fx, r.top())], Stroke::new(1.0, theme::alpha(accent, 0.8 * a)));
+        inner.add(egui::Shape::convex_polygon(vec![strip.left_bottom(), pos2(fx, strip.bottom()), r.left_bottom()], fade_col, Stroke::NONE));
+        inner.line_segment([r.left_bottom(), pos2(fx, strip.bottom())], edge);
     }
     if c.fade_out > Time::ZERO {
         let fx = r.right() - (c.fade_out.as_secs_f64() as f32) * pps;
-        inner.add(egui::Shape::convex_polygon(vec![pos2(fx, r.top()), r.right_top(), r.right_bottom()], fade_col, Stroke::NONE));
-        inner.line_segment([pos2(fx, r.top()), r.right_bottom()], Stroke::new(1.0, theme::alpha(accent, 0.8 * a)));
+        inner.add(egui::Shape::convex_polygon(vec![pos2(fx, strip.bottom()), strip.right_bottom(), r.right_bottom()], fade_col, Stroke::NONE));
+        inner.line_segment([pos2(fx, strip.bottom()), r.right_bottom()], edge);
     }
     if selected && r.width() > 30.0 {
         for fx in [
             r.left() + (c.fade_in.as_secs_f64() as f32) * pps,
             r.right() - (c.fade_out.as_secs_f64() as f32) * pps,
         ] {
-            inner.circle_filled(pos2(fx, r.top() + 5.0), 3.5, Color32::WHITE);
-            inner.circle_stroke(pos2(fx, r.top() + 5.0), 3.5, Stroke::new(1.0, accent));
+            let h = Rect::from_center_size(pos2(fx, r.top() + 5.0), vec2(7.0, 7.0));
+            inner.rect_filled(h, 0, pal::ink());
+            inner.rect_stroke(h, 0, Stroke::new(1.0, pal::bg()), StrokeKind::Outside);
         }
     }
 
     if track.hidden || track.muted {
-        p.rect_filled(r, rr, theme::alpha(Color32::BLACK, 0.5));
+        p.rect_filled(r, rr, theme::alpha(pal::bg(), 0.6));
     }
     if selected {
-        theme::glow_rect(p, r, 6, accent);
+        p.rect_stroke(r, rr, Stroke::new(1.5, pal::ink()), StrokeKind::Inside);
     } else {
-        p.rect_stroke(r, rr, Stroke::new(1.0, theme::alpha(theme::lerp(base, accent, 0.45), a)), StrokeKind::Inside);
+        p.rect_stroke(r, rr, Stroke::new(1.0, theme::alpha(pal::rule_strong(), a)), StrokeKind::Inside);
     }
 }
 
 fn headers(app: &mut KerfApp, ui: &mut egui::Ui, head: Rect, body: Rect, lanes: &[Lane]) {
     let p = ui.painter_at(head);
-    p.rect_filled(head, 0, PANEL);
+    p.rect_filled(head, 0, pal::bg());
     let corner = Rect::from_min_size(head.min, vec2(head.width(), RULER_H));
-    p.rect_filled(corner, 0, BG);
     let fps = app.project().timeline.fps;
-    p.text(
-        corner.left_center() + vec2(10.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        app.playhead.timecode(fps),
-        theme::mono(11.5),
-        CYAN,
-    );
+    p.text(corner.left_center() + vec2(12.0, 0.0), egui::Align2::LEFT_CENTER, app.playhead.timecode(fps), theme::mono(FS_XS), pal::ink());
+    p.line_segment([corner.left_bottom(), corner.right_bottom()], Stroke::new(1.0, pal::rule()));
     let clip_rect = Rect::from_min_max(pos2(head.left(), body.top()), pos2(head.right(), body.bottom()));
     let p = ui.painter_at(clip_rect);
     for lane in lanes {
@@ -1004,34 +999,36 @@ fn headers(app: &mut KerfApp, ui: &mut egui::Ui, head: Rect, body: Rect, lanes: 
             continue;
         }
         let Some(track) = app.project().timeline.track(lane.track).cloned() else { continue };
-        let accent = if track.kind == TrackKind::Video { CYAN } else { LIME };
-        p.rect_filled(r.shrink2(vec2(2.0, 1.0)), 6, PANEL_HI);
-        p.rect_filled(Rect::from_min_size(r.min + vec2(2.0, 6.0), vec2(3.0, r.height() - 12.0)), 2, theme::alpha(accent, 0.8));
-        p.text(r.left_top() + vec2(12.0, 8.0), egui::Align2::LEFT_TOP, &track.name, theme::prop(12.5), TEXT);
+        p.line_segment([r.left_bottom() + vec2(0.0, 1.0), r.right_bottom() + vec2(0.0, 1.0)], Stroke::new(1.0, pal::rule()));
+        p.text(r.left_top() + vec2(12.0, 9.0), egui::Align2::LEFT_TOP, track.name.to_lowercase(), theme::mono(FS_SM), pal::ink());
+        let kind = if track.kind == TrackKind::Video { "video" } else { "audio" };
+        p.text(r.right_top() + vec2(-10.0, 10.0), egui::Align2::RIGHT_TOP, kind, theme::mono(FS_2XS), pal::faint());
 
-        // Buttons: visibility/mute, lock.
-        let b1 = Rect::from_min_size(pos2(r.left() + 10.0, r.bottom() - 26.0), vec2(26.0, 20.0));
-        let b2 = b1.translate(vec2(30.0, 0.0));
-        let (icon1, on1, tip1) = if track.kind == TrackKind::Video {
-            (if track.hidden { "○" } else { "👁" }, track.hidden, "Hide track")
+        // Small text toggles: hide / mute, lock.
+        let (l1, on1, tip1) = if track.kind == TrackKind::Video {
+            ("hide", track.hidden, "hide this track")
         } else {
-            (if track.muted { "🔇" } else { "🔊" }, track.muted, "Mute track")
+            ("mute", track.muted, "mute this track")
         };
-        for (i, (b, icon, on, tip)) in [(b1, icon1, on1, tip1), (b2, if track.locked { "🔒" } else { "🔓" }, track.locked, "Lock track")]
-            .into_iter()
-            .enumerate()
-        {
+        let mut x = r.left() + 10.0;
+        for (i, (label, on, tip)) in [(l1, on1, tip1), ("lock", track.locked, "lock this track")].into_iter().enumerate() {
+            let g = p.layout_no_wrap(label.to_string(), theme::mono(FS_2XS), pal::dim());
+            let b = Rect::from_min_size(pos2(x, r.bottom() - 25.0), vec2(g.size().x + 12.0, 18.0));
+            x = b.right() + 6.0;
             if !clip_rect.intersects(b) {
                 continue;
             }
             let resp = ui.interact(b.intersect(clip_rect), ui.scope_id().with(("hdr", track.id.0, i)), Sense::click()).on_hover_text(tip);
-            let col = if on { AMBER } else if resp.hovered() { Color32::WHITE } else { TEXT_DIM };
-            if on {
-                p.rect_filled(b, 5, theme::alpha(AMBER, 0.15));
+            let (fill, stroke, col) = if on {
+                (pal::soft(pal::warn()), Color32::TRANSPARENT, pal::warn())
             } else if resp.hovered() {
-                p.rect_filled(b, 5, RAISED);
-            }
-            p.text(b.center(), egui::Align2::CENTER_CENTER, icon, theme::prop(12.0), col);
+                (Color32::TRANSPARENT, pal::rule_strong(), pal::ink())
+            } else {
+                (Color32::TRANSPARENT, pal::rule(), pal::dim())
+            };
+            p.rect_filled(b, R_CTRL, fill);
+            p.rect_stroke(b, R_CTRL, Stroke::new(1.0, stroke), StrokeKind::Inside);
+            p.galley_with_override_text_color(b.center() - g.size() / 2.0, g, col);
             if resp.clicked() {
                 let mut t = track.clone();
                 match (i, track.kind) {
@@ -1044,79 +1041,83 @@ fn headers(app: &mut KerfApp, ui: &mut egui::Ui, head: Rect, body: Rect, lanes: 
                 });
             }
         }
-        // Header context menu: add / remove tracks.
         let hr = ui.interact(r.intersect(clip_rect), ui.scope_id().with(("hdrbody", track.id.0)), Sense::click());
         hr.context_menu(|ui| {
-            if ui.button("Add video track").clicked() {
+            if ui.button("add video track").clicked() {
                 app.edit(|d| d.add_track(TrackKind::Video));
                 ui.close();
             }
-            if ui.button("Add audio track").clicked() {
+            if ui.button("add audio track").clicked() {
                 app.edit(|d| d.add_track(TrackKind::Audio));
                 ui.close();
             }
             let empty = track.clips.is_empty();
-            if ui.add_enabled(empty, egui::Button::new("Delete track (must be empty)")).clicked() {
+            if ui.add_enabled(empty, egui::Button::new("delete track (when empty)")).clicked() {
                 app.edit(|d| d.apply(Command::RemoveTrack { id: track.id }));
                 ui.close();
             }
         });
     }
-    p.line_segment([pos2(head.right(), head.top()), pos2(head.right(), head.bottom())], Stroke::new(1.0, LINE));
+    p.line_segment([pos2(head.right() - 0.5, head.top()), pos2(head.right() - 0.5, head.bottom())], Stroke::new(1.0, pal::rule()));
 }
 
 fn toolbar(app: &mut KerfApp, ui: &mut egui::Ui) {
-    egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 4)).fill(PANEL).show(ui, |ui| {
+    egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 6)).fill(pal::bg()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            if theme::icon_button(ui, "⬉", app.tool == Tool::Select, "Select tool (A)").clicked() {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            if theme::icon_button(ui, "select", app.tool == Tool::Select, "select tool  (a)").clicked() {
                 app.tool = Tool::Select;
             }
-            if theme::icon_button(ui, "✂", app.tool == Tool::Blade, "Blade tool (B)").clicked() {
+            if theme::icon_button(ui, "blade", app.tool == Tool::Blade, "blade tool  (b)").clicked() {
                 app.tool = Tool::Blade;
             }
-            ui.separator();
-            if theme::icon_button(ui, "🔪", false, "Split at playhead (S)").clicked() {
+            ui.add_space(10.0);
+            if theme::icon_button(ui, "split", false, "split at the playhead  (s)").clicked() {
                 app.split_at_playhead();
             }
-            if theme::icon_button(ui, "🗑", false, "Ripple delete selection (Shift+Del)").clicked() {
+            if theme::icon_button(ui, "ripple del", false, "ripple delete the selection  (shift+del)").clicked() {
                 app.delete_selection(true);
             }
-            if theme::icon_button(ui, "⬅", false, "Close all gaps").clicked() {
+            if theme::icon_button(ui, "close gaps", false, "remove empty stretches").clicked() {
                 if let Some(n) = app.edit(|d| d.close_gaps()) {
-                    app.toast(format!("Closed {n} gap(s)"), CYAN);
+                    app.toast(format!("closed {n} gap(s)"), pal::ok());
                 }
             }
-            if theme::icon_button(ui, "T", false, "Add title at playhead (T)").clicked() {
+            if theme::icon_button(ui, "title", false, "add a title at the playhead  (t)").clicked() {
                 let t = app.playhead;
                 app.edit(|d| d.add_text(kerf_core::TextStyle::new("Title"), t, Time::from_secs_f64(3.0)));
             }
-            if theme::icon_button(ui, "📌", false, "Add marker (M)").clicked() {
+            if theme::icon_button(ui, "marker", false, "add a marker  (m)").clicked() {
                 let t = app.playhead;
                 let n = app.project().timeline.markers.len() + 1;
-                app.edit(|d| d.add_marker(t, format!("Marker {n}")));
+                app.edit(|d| d.add_marker(t, format!("marker {n}")));
             }
-            ui.separator();
-            if theme::icon_button(ui, "🎯", app.snapping, "Snapping (N)").clicked() {
+            ui.add_space(10.0);
+            if theme::icon_button(ui, "snap", app.snapping, "snapping  (n)").clicked() {
                 app.snapping = !app.snapping;
             }
-            if theme::icon_button(ui, "⏩", app.tl.follow, "Follow playhead").clicked() {
+            if theme::icon_button(ui, "follow", app.tl.follow, "follow the playhead").clicked() {
                 app.tl.follow = !app.tl.follow;
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::icon_button(ui, "⛶", false, "Zoom to fit (Shift+Z)").clicked() {
+                if theme::icon_button(ui, "fit", false, "zoom to fit  (shift+z)").clicked() {
                     app.tl.fit_pending = true;
                 }
                 let mut z = app.tl.pps.ln();
+                ui.spacing_mut().slider_width = 120.0;
                 if ui.add(egui::Slider::new(&mut z, 0.0..=8.3).show_value(false)).changed() {
                     app.tl.pps = z.exp();
                 }
-                ui.label(egui::RichText::new("ZOOM").size(10.0).color(TEXT_FAINT));
+                ui.label(egui::RichText::new("zoom").font(theme::mono(FS_XS)).color(pal::faint()));
                 if !app.selection.is_empty() {
-                    ui.label(egui::RichText::new(format!("{} selected", app.selection.len())).size(11.0).color(CYAN));
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(format!("{} selected", app.selection.len())).font(theme::mono(FS_XS)).color(pal::dim()));
                 }
             });
         });
     });
+    let r = ui.min_rect();
+    ui.painter().line_segment([pos2(r.left(), r.bottom()), pos2(r.right(), r.bottom())], Stroke::new(1.0, pal::rule()));
 }
 
 fn nice_step(pps: f32, fps: f64) -> f64 {

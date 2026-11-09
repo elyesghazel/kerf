@@ -38,10 +38,10 @@ impl Codec {
 
     pub fn label(self) -> &'static str {
         match self {
-            Codec::H264 => "H.264 (x264)",
-            Codec::H265 => "H.265 (x265)",
-            Codec::H264Vaapi => "H.264 GPU (VA-API)",
-            Codec::Prores => "ProRes 422",
+            Codec::H264 => "h.264 (x264)",
+            Codec::H265 => "h.265 (x265)",
+            Codec::H264Vaapi => "h.264 gpu (va-api)",
+            Codec::Prores => "prores 422",
         }
     }
 }
