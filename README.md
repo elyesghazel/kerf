@@ -1,9 +1,32 @@
-# kerf
+<a id="readme-top"></a>
 
-A lightweight, fast video editor written in Rust, with a timeline that AI agents
-can cut alongside you.
+<div align="center">
 
-*kerf* (n.): the slit a blade leaves when it cuts.
+<img src="crates/kerf-app/assets/icon-128.png" width="110" alt="kerf logo">
+
+<h1>kerf</h1>
+
+<p><b>A fast Rust video editor with a timeline AI agents can cut alongside you.</b><br>Desktop studio, headless CLI and MCP server on one <code>.kerf</code> file, with remote render over SSH.<br><i>kerf</i> (n.): the slit a blade leaves when it cuts.</p>
+
+<p>
+  <a href="https://github.com/elyesghazel/kerf/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/github/license/elyesghazel/kerf?style=flat-square&color=lightgrey"></a>
+  <a href="https://github.com/elyesghazel/kerf/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/elyesghazel/kerf?style=flat-square"></a>
+  <img alt="status" src="https://img.shields.io/badge/status-alpha-orange?style=flat-square">
+  <br>
+  <a href="https://www.rust-lang.org"><img alt="rust" src="https://img.shields.io/badge/rust-2021-CE422B?style=flat-square&logo=rust&logoColor=white"></a>
+  <img alt="egui" src="https://img.shields.io/badge/UI-egui-333333?style=flat-square">
+  <img alt="ffmpeg" src="https://img.shields.io/badge/FFmpeg-pipes-007808?style=flat-square&logo=ffmpeg&logoColor=white">
+  <img alt="mcp" src="https://img.shields.io/badge/MCP-server-000000?style=flat-square&logo=anthropic&logoColor=white">
+  <a href="https://github.com/elyesghazel/kerf/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/elyesghazel/kerf?style=flat-square&logo=github&color=yellow"></a>
+</p>
+
+<p><a href="#features"><b>Features</b></a> · <a href="#quick-start"><b>Quick start</b></a> · <a href="#keys"><b>Keys</b></a> · <a href="#build"><b>Build</b></a> · <a href="AGENTS.md"><b>Agents</b></a> · <a href="ROADMAP.md"><b>Roadmap</b></a></p>
+
+<a href="https://ko-fi.com/elyesghazel"><img alt="Support me on Ko-fi" src="https://ko-fi.com/img/githubbutton_sm.svg"></a>
+
+</div>
+
+---
 
 ![kerf studio](docs/studio-dark.png)
 
@@ -60,9 +83,13 @@ edit up live, and you can undo it with Ctrl+Z.
 
 **Agents**: see [AGENTS.md](AGENTS.md).
 
+## Screenshots
+
 | light | colour page |
 | --- | --- |
 | ![light theme](docs/studio-light.png) | ![colour page with scopes](docs/studio-color.png) |
+
+## Quick start
 
 ```sh
 kerf new cut.kerf --preset vertical
@@ -133,6 +160,22 @@ See [ROADMAP.md](ROADMAP.md) for what comes next.
 kerf is a side project. For a full Premiere-style editor in Rust, look at
 [FilmCraft](https://github.com/storytold/filmcraft).
 
+## Support
+
+If kerf saves you time, you can [buy me a coffee on Ko-fi](https://ko-fi.com/elyesghazel). Bug reports, ideas and
+pull requests are just as welcome: [open an issue](https://github.com/elyesghazel/kerf/issues/new).
+
+## Star history
+
+<a href="https://star-history.com/#elyesghazel/kerf&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=elyesghazel/kerf&type=Date&theme=dark">
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=elyesghazel/kerf&type=Date" width="600">
+  </picture>
+</a>
+
 ## License
 
-GPL-3.0-or-later
+GPL-3.0-or-later, see [LICENSE](LICENSE).
+
+<div align="right"><a href="#readme-top">back to top ↑</a></div>
